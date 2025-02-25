@@ -1,0 +1,76 @@
+"nuget: Microsoft.SemanticKernel.Process.LocalRuntime, 1.37.0-alpha"
+"nuget: Microsoft.SemanticKernel.Process.Abstractions, 1.37.0-alpha"
+"nuget: Microsoft.SemanticKernel.Process.Core, 1.37.0-alpha"
+"nuget: Microsoft.SemanticKernel.Connectors.AzureOpenAI, 1.37.0"
+
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Process.Tools;
+
+#pragma warning disable SKEXP0080
+
+// Step 1
+public class PhaseIdentityStep : KernelProcessStep
+{
+    [KernelFunction]
+    public async Task IdentifyPhase(string input, KernelProcessStepContext context)
+    {
+        Console.WriteLine("Entering Phase Identity Step");
+        string phaseIdentity = "Identified Phase Information"; // Replace with actual logic
+        await context.EmitEventAsync("PhaseIdentified", phaseIdentity);
+    }
+}
+
+// Step 2
+public class PresignPhaseStep : KernelProcessStep
+{
+    [KernelFunction]
+    public async Task<string> PresignPhase(string phaseData, Kernel kernel)
+    {
+        Console.WriteLine("Entering Presign Phase Step");
+        var result = await kernel.InvokePromptAsync($"Process presign requirements based on {phaseData}.");
+        return result.ToString();
+    }
+}
+
+// Step 3
+public class UnderstandTSARequirementsStep : KernelProcessStep
+{
+    [KernelFunction]
+    public void UnderstandRequirements(string presignData)
+    {
+        Console.WriteLine("Entering Understand TSA Requirements Step");
+        Console.WriteLine(presignData); // Replace with actual processing logic
+    }
+}
+
+#pragma warning disable SKEXP0080
+
+ProcessBuilder processBuilder = new("TSAProcess");
+
+// Add the steps
+var phaseIdentityStep = processBuilder.AddStepFromType<PhaseIdentityStep>();
+var presignPhaseStep = processBuilder.AddStepFromType<PresignPhaseStep>();
+var understandTSARequirementsStep = processBuilder.AddStepFromType<UnderstandTSARequirementsStep>();
+
+// Orchestrate the events
+processBuilder
+    .OnInputEvent("Start")
+    .SendEventTo(new(phaseIdentityStep));
+
+phaseIdentityStep
+    .OnEvent("PhaseIdentified")
+    .SendEventTo(new(presignPhaseStep, parameterName: "phaseData"));
+
+presignPhaseStep
+    .OnFunctionResult()
+    .SendEventTo(new(understandTSARequirementsStep));
+
+Kernel kernel = Kernel.CreateBuilder()
+    .AddAzureOpenAIChatCompletion("GPT4ov1", "https://<>.openai.azure.com", "")
+    .Build();
+
+// Build and run the process
+KernelProcess process = processBuilder.Build();
+
+await process.StartAsync(kernel, new KernelProcessEvent { Id = "Start", Data = "Initial TSA Data" });
